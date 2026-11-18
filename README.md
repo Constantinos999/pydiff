@@ -62,11 +62,23 @@ python pydiff.py --check-deps             # just check the dependencies
 | **Side by side / In-line** | two panes, or one pane with each removed line (red, `-`) shown above its replacement (green, `+`), like GitHub |
 | **Only changes** | hides unchanged stretches, keeping a few lines of context around each change. Set how many under *View → Lines of Context Around Changes* |
 | **Export…** | save the comparison as an **HTML report** (opens in any web browser; matches the current view) or a standard **.diff / .patch** file (also **Ctrl+E**) |
+| **Open in editor** | open the left or right file in your text editor, at the line of the change you're looking at (see below) |
+| **⟳ Refresh** | compare again after a file has changed (also **F5**) |
 | **Compare functions** | the function-by-function view for Python files (also **Ctrl+K**) |
 
 The status text on the right summarises the differences, e.g. *"5 changes (lines: 3 edited, 1 removed, 4 added)"*. It also notes when the files use a different **encoding** (e.g. UTF-8 vs UTF-16) or different **line endings** (Windows CRLF vs Unix LF).
 
 Your choices (view mode, *Only changes*, context lines, *Start maximised*) are remembered for next time.
+
+### Copying, and editing in your own editor
+
+pydiff shows files; it doesn't edit them, so the panes are read-only (no paste or undo). But:
+
+- **Copy:** select text and press **Ctrl+C**, or **right-click → Copy**. **Ctrl+A** or **right-click → Select All** selects a whole pane.
+- **Open in editor:** **right-click → Open Left/Right File in…**, the **Open in editor** button, or the File menu. The file opens in your text editor **at the line you're looking at**: the change you last jumped to, or else the top of the screen.
+  - pydiff uses **Notepad++** if it's installed, otherwise **VS Code**, otherwise **Notepad**. Pick a different one with **Open in editor → Choose Editor…** (Notepad doesn't support jumping to a line).
+  - It never uses Windows' default "open" action, which for a `.py` file would *run* the script instead of editing it.
+- **Refresh:** save your edits, then switch back to pydiff. It notices the file has changed and **compares again automatically**, keeping your place. You can also press **F5** or click **⟳ Refresh**.
 
 ### Comparing two files
 
@@ -145,6 +157,9 @@ The **Git** menu (needs [git](https://git-scm.com/downloads) installed):
 | Ctrl+E | export results |
 | Ctrl+L | compare with last git commit |
 | Ctrl+C | copy selected text |
+| Ctrl+A | select all (in the pane you clicked) |
+| F5 | refresh (compare again) |
+| Right-click | Copy, Select All, Open in editor, Refresh |
 
 ### Start maximised
 

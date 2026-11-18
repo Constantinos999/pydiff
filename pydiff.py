@@ -135,7 +135,8 @@ def check_dependencies():
     for part in (('ui', 'mainwindow.py'), ('ui', 'mainwindow_ui.py'), ('ui', 'diffview.py'),
                  ('ui', 'functioncompare.py'), ('ui', 'searchtextdialog.py'),
                  ('utilities', 'diffengine.py'), ('utilities', 'textfiles.py'),
-                 ('utilities', 'settings.py'), ('utilities', 'gittools.py')):
+                 ('utilities', 'settings.py'), ('utilities', 'gittools.py'),
+                 ('utilities', 'editor.py')):
         if not os.path.isfile(os.path.join(APP_DIR, *part)):
             report('pydiff is incomplete',
                    'This file is missing:\n%s\n\nPlease download pydiff again.'

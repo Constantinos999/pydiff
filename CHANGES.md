@@ -15,6 +15,7 @@ Every bug listed under "Bug fixes" was reproduced with the original code before 
 - **New: git integration**: compare a file with its last (or any) commit, and use pydiff as git's diff viewer.
 - **New: UTF-16 and binary file handling**, encoding and line-ending notes, and an option to ignore line-ending-only differences in folder comparisons.
 - **New: start maximised**, and view choices remembered between runs.
+- **New: right-click menu** (Copy, Select All), **Open in editor** at the current line, and **Refresh** (automatic when you switch back after editing).
 - **New: one-click Windows launcher** (`Run_PyDiff.bat`) with automatic dependency checks.
 - **Clearer highlighting**: readable text selection, bolder changed characters.
 - **Better error handling**: problems are reported instead of failing silently.
@@ -153,6 +154,15 @@ A new **Git** menu:
 - **View → Start Maximised** opens pydiff full-screen every time.
 - The view mode, *Only changes*, context lines, *Start maximised* and the line-endings option are remembered in `.pydiff_settings.json` in the user's home folder. If the file can't be written, nothing breaks.
 
+### Copy, Select All, Open in editor and Refresh
+- **Right-click menu** on both panes, in both windows: **Copy**, **Select All**, **Open Left/Right File in (editor)** and **Refresh**. **Ctrl+A** selects all in a pane, and *Edit → Select All* is added.
+- **Open in editor** (toolbar button, File menu or right-click) opens the file in the user's text editor **at the line being viewed**: the change last jumped to, or else the top of the screen. It uses Notepad++ if installed, otherwise VS Code, otherwise Notepad (on Linux: VS Code, gedit, Kate ...), or the program chosen with *Choose Editor…*. Line numbers are passed in each editor's own way (`-n12`, `--goto file:12`, `+12`).
+- **Safety:** pydiff never opens a file with Windows' default "open" action, because for `.py` files that *runs* the script.
+- The temporary copy made when comparing with a git commit isn't offered for editing; only the real file is.
+- **Refresh** (**F5** or the **⟳ Refresh** button) re-reads the files and compares again, keeping the scroll position and the current change. In folder mode it re-scans both folders and re-selects the same file. In the function window it re-parses both files and keeps the same function selected.
+- **Automatic refresh:** when pydiff's window gets focus back (e.g. after saving in your editor), it checks whether either file has changed, and refreshes if so.
+- **Files:** `utilities/editor.py` (new), `ui/diffview.py`, `ui/mainwindow.py`, `ui/functioncompare.py`, `utilities/settings.py`
+
 ### Not done: diff-match-patch
 A suggestion on the original project was to use Google's *diff-match-patch* library. Its main advantage would be speed on large files, which the new engine already provides, without adding a third-party package. So it wasn't added.
 
@@ -175,7 +185,7 @@ A suggestion on the original project was to use Google's *diff-match-patch* libr
 
 - Paths can now be given directly (`pydiff.py a.py b.py`) as well as with the original `-p a.py b.py`.
 - New options: `-f` / `--functions` and `--check-deps`.
-- New keyboard shortcuts: **Ctrl+O** (compare files), **Ctrl+E** (export), **Ctrl+L** (compare with last commit), **Alt+Up/Down** (previous/next change).
+- New keyboard shortcuts: **Ctrl+O** (compare files), **Ctrl+E** (export), **Ctrl+L** (compare with last commit), **Alt+Up/Down** (previous/next change), **F5** (refresh), **Ctrl+A** (select all).
 - pydiff can be started from any folder. It no longer has to be run from inside its own folder.
 
 ---
@@ -202,6 +212,7 @@ A suggestion on the original project was to use Google's *diff-match-patch* libr
 | `utilities/textfiles.py` | **new** | encoding detection (UTF-8/UTF-16/ANSI), binary detection, line endings |
 | `utilities/gittools.py` | **new** | git integration |
 | `utilities/settings.py` | **new** | remembered settings |
+| `utilities/editor.py` | **new** | finds the text editor and opens files at a line |
 | `Run_PyDiff.bat` | **new** | Windows one-click launcher |
 | `CHANGES.md` | **new** | this file |
 | `screenshot_main.png`, `screenshot_inline.png`, `screenshot_functions.png` | **new** | screenshots for the README |

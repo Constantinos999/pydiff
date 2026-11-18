@@ -17,6 +17,7 @@ DEFAULTS = {
     'context_lines': 3,            # unchanged lines kept around each change
     'start_maximised': False,
     'ignore_line_endings': True,   # folder view: files differing only in CRLF/LF aren't 'changed'
+    'editor': '',                  # text editor program chosen by the user ('' = find one)
 }
 
 

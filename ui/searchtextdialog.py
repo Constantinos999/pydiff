@@ -2,6 +2,7 @@
 MIT License
 
 Copyright (c) 2016 Yasser Elsayed
+Copyright (c) 2026 Constantinos (modifications and additions - see CHANGES.md)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -79,7 +80,8 @@ class SearchTextDialog(Frame):
         countVar = StringVar()
         for i,t in enumerate(self.__textwidgets):
             if self.__curSearchResult['indices'][i] == -1: continue
-            nextIdx = float(self.__curSearchResult['indices'][i]) + 1
+            cur = self.__curSearchResult['indices'][i]
+            nextIdx = '1.0' if cur == '0.0' else '%s + 1c' % cur
             pos = t.search(self.__searchStr, nextIdx, END, nocase=self.__matchCaseVar.get() == 0)
             self.__curSearchResult['indices'][i] = pos if pos else -1
 

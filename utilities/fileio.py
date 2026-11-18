@@ -2,6 +2,7 @@
 MIT License
 
 Copyright (c) 2016 Yasser Elsayed
+Copyright (c) 2026 Constantinos (modifications and additions - see CHANGES.md)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,12 +24,14 @@ SOFTWARE.
 """
 
 from tkinter import *
+from tkinter.messagebox import showerror
 
 class FileIO:
     def load_file_to_text_area(self, fname, textArea):
         textArea.config(state=NORMAL)
         try:
-            text = open(fname).read()
+            with open(fname, encoding='utf-8', errors='replace') as f:
+                text = f.read()
             textArea.delete(1.0, END) 
             textArea.insert(1.0, text)
         except Exception as e:

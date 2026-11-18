@@ -2,6 +2,7 @@
 MIT License
 
 Copyright (c) 2016 Yasser Elsayed
+Copyright (c) 2026 Constantinos (modifications and additions - see CHANGES.md)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -75,14 +76,17 @@ class MainWindowUI:
 
     # Colors
     whiteColor = '#ffffff'
-    redColor = '#ffc4c4'
-    darkredColor = '#ff8282'
+    redColor = '#ffdcdc'        # removed / changed line (left)
+    darkredColor = '#f28b8b'    # the exact characters that changed (left)
     grayColor = '#dddddd'
     lightGrayColor = '#eeeeee'
-    greenColor = '#c9fcd6'
-    darkgreenColor = '#50c96e'
+    greenColor = '#d9f7df'      # added / changed line (right)
+    darkgreenColor = '#7fd893'  # the exact characters that changed (right)
     yellowColor = '#f0f58c'
-    darkYellowColor = '#ffff00'
+    darkYellowColor = '#ffd700'
+    selectColor = '#1e5fd6'         # drag-selected text: strong blue ...
+    selectTextColor = '#ffffff'     # ... with white text, readable on any diff colour
+    inactiveSelectColor = '#6f97e0' # selection when the window is not focused
     purpleLight = '#F5EBFC'
 
     def __init__(self, window):
@@ -101,6 +105,12 @@ class MainWindowUI:
         self.menubar = Menu(self.main_window)
         self.menus = {}
         self.text_area_font = 'TkFixedFont'
+        try:
+            import tkinter.font as tkfont
+        except ImportError:
+            import tkFont as tkfont
+        self.bold_font = tkfont.nametofont('TkFixedFont').copy()
+        self.bold_font.configure(weight='bold')
 
     # Center window and set its size
     def center_window(self):
@@ -153,6 +163,7 @@ class MainWindowUI:
         self.fileTreeView.tag_configure('green', background=self.greenColor)
         self.fileTreeView.tag_configure('yellow', background=self.yellowColor)
         self.fileTreeView.tag_configure('purpleLight', background=self.purpleLight)
+        self.fileTreeView.tag_configure('blue', background='#d6ecff')
 
         # hide it until needed
         self.fileTreeView.grid_remove()
@@ -182,6 +193,20 @@ class MainWindowUI:
         self.rightFileTextArea.tag_configure('search', background=self.darkYellowColor)
         self.rightFileTextArea.tag_configure('purpleLight', background=self.purpleLight)
 
+        for area in (self.leftFileTextArea, self.rightFileTextArea):
+            # changed characters stand out in bold as well as colour
+            area.tag_configure('darkred', font=self.bold_font)
+            area.tag_configure('darkgreen', font=self.bold_font)
+            # selection: always drawn ON TOP of the diff colours (otherwise the
+            # green/red backgrounds hide it), blue with white text
+            area.config(selectbackground=self.selectColor, selectforeground=self.selectTextColor,
+                        inactiveselectbackground=self.inactiveSelectColor, exportselection=False)
+            area.tag_configure('sel', background=self.selectColor, foreground=self.selectTextColor)
+            area.tag_raise('search')
+            area.tag_raise('sel')
+            # Tk on Windows won't let you select in a read-only text unless it has focus
+            area.bind('<Button-1>', lambda e: e.widget.focus_set(), add='+')
+
         # disable the text areas
         self.leftFileTextArea.config(state=DISABLED)
         self.rightFileTextArea.config(state=DISABLED)
@@ -203,11 +228,9 @@ class MainWindowUI:
         self.rightLinenumbers.config(state=DISABLED)
 
     # Scroll bars
-    def scrollBothY(self, action, position, type=None):
-        self.leftFileTextArea.yview_moveto(position)
-        self.rightFileTextArea.yview_moveto(position)
-        self.leftLinenumbers.yview_moveto(position)
-        self.rightLinenumbers.yview_moveto(position)
+    def scrollBothY(self, *args):
+        for w in (self.leftFileTextArea, self.rightFileTextArea, self.leftLinenumbers, self.rightLinenumbers):
+            w.yview(*args)
 
     def updateScrollY(self, first, last, type=None):
         self.leftFileTextArea.yview_moveto(first)
@@ -216,9 +239,9 @@ class MainWindowUI:
         self.rightLinenumbers.yview_moveto(first)
         self.uniScrollbar.set(first, last)
 
-    def scrollBothX(self, action, position, type=None):
-        self.leftFileTextArea.xview_moveto(position)
-        self.rightFileTextArea.xview_moveto(position)
+    def scrollBothX(self, *args):
+        self.leftFileTextArea.xview(*args)
+        self.rightFileTextArea.xview(*args)
 
     def updateScrollX(self, first, last, type=None):
         self.leftFileTextArea.xview_moveto(first)

@@ -2,6 +2,7 @@
 MIT License
 
 Copyright (c) 2016 Yasser Elsayed
+Copyright (c) 2026 Constantinos (modifications and additions - see CHANGES.md)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,19 +24,35 @@ SOFTWARE.
 """
 
 import os, mimetypes, filecmp
-from difflibparser.difflibparser import *
 from ui.mainwindow_ui import MainWindowUI
+from ui.diffview import render_diff
+from ui.functioncompare import open_function_compare
 try:    # for Python2
     from Tkinter import *
     from tkFileDialog import askopenfilename, askdirectory
     from tkSimpleDialog import askstring
+    from tkMessageBox import showerror
 except ImportError:    # for Python3
     from tkinter import *
     from tkinter.filedialog import askopenfilename, askdirectory
     from tkinter.simpledialog import askstring
+    from tkinter.messagebox import showerror
+
+def read_text_file(path):
+    """Read a text file whatever its encoding. Python's default on Windows is
+    cp1252, which fails on most UTF-8 source files and left the pane blank."""
+    with open(path, 'rb') as f:
+        data = f.read()
+    for enc in ('utf-8-sig', 'cp1252'):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            pass
+    return data.decode('latin-1')
+
 
 class MainWindow:
-    def start(self, leftpath = None, rightpath = None):
+    def start(self, leftpath = None, rightpath = None, functions = False):
         self.main_window = Tk()
         self.main_window.title('Pydiff')
         self.__main_window_ui = MainWindowUI(self.main_window)
@@ -50,10 +67,11 @@ class MainWindow:
         self.__main_window_ui.create_line_numbers()
         self.__main_window_ui.create_scroll_bars()
         self.__main_window_ui.create_file_treeview()
-        path_to_my_project = os.getcwd()
         self.__main_window_ui.add_menu('File', [
             {'name': 'Compare Files', 'command': self.__browse_files},
             {'name': 'Compare Directories', 'command': self.__browse_directories},
+            {'separator'},
+            {'name': 'Compare Functions (Python)', 'command': self.__compare_functions, 'accelerator': 'Ctrl+K'},
             {'separator'},
             {'name': 'Exit', 'command': self.__exit, 'accelerator': 'Alt+F4'}
             ])
@@ -62,7 +80,7 @@ class MainWindow:
             {'separator'},
             {'name': 'Cut', 'command': self.__cut, 'accelerator': 'Ctrl+X'},
             {'name': 'Copy', 'command': self.__copy, 'accelerator': 'Ctrl+C'},
-            {'name': 'Paste', 'command': self.__paste, 'accelerator': 'Ctrl+P'},
+            {'name': 'Paste', 'command': self.__paste, 'accelerator': 'Ctrl+V'},
             {'separator'},
             {'name': 'Go To Line', 'command': self.__goToLine, 'accelerator': 'Ctrl+G'}
             ])
@@ -77,17 +95,23 @@ class MainWindow:
 
         self.__bind_key_shortcuts()
 
+        if functions and self.leftFile and self.rightFile:
+            self.main_window.after(200, self.__compare_functions)
+
         self.main_window.mainloop()
 
     def __bind_key_shortcuts(self):
         self.main_window.bind('<Control-f>', lambda *x: self.__startFindText())
         self.main_window.bind('<Control-g>', lambda *x: self.__goToLine())
+        self.main_window.bind('<Control-k>', lambda *x: self.__compare_functions())
         self.main_window.bind('<Escape>', lambda *x: self.__endFindText())
         self.main_window.bind('<F3>', self.__main_window_ui.searchTextDialog.nextResult)
 
     def __browse_files(self):
-        self.__load_file('left')
-        self.__load_file('right')
+        if not self.__load_file('left'):
+            return
+        if not self.__load_file('right'):
+            return
         self.filesChanged()
         self.__main_window_ui.fileTreeView.grid_remove()
         self.__main_window_ui.fileTreeYScrollbar.grid_remove()
@@ -101,6 +125,11 @@ class MainWindow:
 
     def __load_directories(self, leftDir, rightDir):
         if leftDir and rightDir:
+            if not (os.path.isdir(leftDir) and os.path.isdir(rightDir)):
+                showerror('Compare Directories', 'Both paths must be folders to compare directories.')
+                return
+            self.__main_window_ui.leftFileLabel.config(text=leftDir)
+            self.__main_window_ui.rightFileLabel.config(text=rightDir)
             self.__main_window_ui.fileTreeView.grid()
             self.__main_window_ui.fileTreeYScrollbar.grid()
             self.__main_window_ui.fileTreeXScrollbar.grid()
@@ -110,18 +139,20 @@ class MainWindow:
     # Recursive method to fill the treevie with given directory hierarchy
     def __browse_process_directory(self, parent, leftPath, rightPath):
         if parent == '':
-            leftPath = leftPath.rstrip('/')
-            rightPath = rightPath.rstrip('/')
+            leftPath = os.path.normpath(leftPath)
+            rightPath = os.path.normpath(rightPath)
             leftDirName = os.path.basename(leftPath)
             rightDirName = os.path.basename(rightPath)
             self.__main_window_ui.fileTreeView.heading('#0', text=leftDirName + ' / ' + rightDirName, anchor=W)
         leftListing = os.listdir(leftPath)
         rightListing = os.listdir(rightPath)
-        mergedListing = list(set(leftListing) | set(rightListing))
+        # folders first, then files, alphabetically (the original order was random)
+        mergedListing = sorted(set(leftListing) | set(rightListing),
+            key=lambda n: (not (os.path.isdir(os.path.join(leftPath, n)) or os.path.isdir(os.path.join(rightPath, n))), n.lower()))
         painted = FALSE
         for l in mergedListing:
-            newLeftPath = leftPath + '/' + l
-            newRightPath = rightPath + '/' + l
+            newLeftPath = os.path.join(leftPath, l)
+            newRightPath = os.path.join(rightPath, l)
             bindValue = (newLeftPath, newRightPath)
             # Item in left dir only
             if l in leftListing and l not in rightListing:
@@ -141,12 +172,12 @@ class MainWindow:
                     # If both are directories, show in white and recurse on contents
                     if os.path.isdir(newLeftPath) and os.path.isdir(newRightPath):
                         oid = self.__main_window_ui.fileTreeView.insert(parent, 'end', text=l, open=False)
-                        painted = self.__browse_process_directory(oid, newLeftPath, newRightPath)
-                        if painted:
+                        if self.__browse_process_directory(oid, newLeftPath, newRightPath):
                             self.__main_window_ui.fileTreeView.item(oid, tags=('purpleLight', 'simple'))
+                            painted = TRUE
                     else:
                         # Both are files. diff the two files to either show them in white or yellow
-                        if (filecmp.cmp(newLeftPath, newRightPath)):
+                        if filecmp.cmp(newLeftPath, newRightPath, shallow=False):
                             oid = self.__main_window_ui.fileTreeView.insert(parent, 'end', text=l, value=bindValue, open=False, tags=('simple'))
                         else:
                             oid = self.__main_window_ui.fileTreeView.insert(parent, 'end', text=l, value=bindValue, open=False, tags=('yellow','simple'))
@@ -206,77 +237,31 @@ class MainWindow:
         paths = self.__main_window_ui.fileTreeView.item(item_id)['values']
         if paths == None or len(paths) == 0:
             return
-        self.leftFile = paths[0]
-        self.rightFile = paths[1]
+        self.leftFile = str(paths[0])
+        self.rightFile = str(paths[1])
         self.filesChanged()
 
     # Insert file contents into text areas and highlight differences
     def diff_files_into_text_areas(self):
-        try:
-            leftFileContents = open(self.leftFile).read()
-        except:
-            leftFileContents = ''
-        try:
-            rightFileContents = open(self.rightFile).read()
-        except:
-            rightFileContents = ''
-
-        diff = DifflibParser(leftFileContents.splitlines(), rightFileContents.splitlines())
-
-        # enable text area edits so we can clear and insert into them
-        self.__main_window_ui.leftFileTextArea.config(state=NORMAL)
-        self.__main_window_ui.rightFileTextArea.config(state=NORMAL)
-        self.__main_window_ui.leftLinenumbers.config(state=NORMAL)
-        self.__main_window_ui.rightLinenumbers.config(state=NORMAL)
-
-        # clear all text areas
-        self.__main_window_ui.leftFileTextArea.delete(1.0, END)
-        self.__main_window_ui.rightFileTextArea.delete(1.0, END)
-        self.__main_window_ui.leftLinenumbers.delete(1.0, END)
-        self.__main_window_ui.rightLinenumbers.delete(1.0, END)
-
-        leftlineno = rightlineno = 1
-        for line in diff:
-            if line['code'] == DiffCode.SIMILAR:
-                self.__main_window_ui.leftFileTextArea.insert('end', line['line'] + '\n')
-                self.__main_window_ui.rightFileTextArea.insert('end', line['line'] + '\n')
-            elif line['code'] == DiffCode.RIGHTONLY:
-                self.__main_window_ui.leftFileTextArea.insert('end', '\n', 'gray')
-                self.__main_window_ui.rightFileTextArea.insert('end', line['line'] + '\n', 'green')
-            elif line['code'] == DiffCode.LEFTONLY:
-                self.__main_window_ui.leftFileTextArea.insert('end', line['line'] + '\n', 'red')
-                self.__main_window_ui.rightFileTextArea.insert('end', '\n', 'gray')
-            elif line['code'] == DiffCode.CHANGED:
-                for (i,c) in enumerate(line['line']):
-                    self.__main_window_ui.leftFileTextArea.insert('end', c, 'darkred' if i in line['leftchanges'] else 'red')
-                for (i,c) in enumerate(line['newline']):
-                    self.__main_window_ui.rightFileTextArea.insert('end', c, 'darkgreen' if i in line['rightchanges'] else 'green')
-                self.__main_window_ui.leftFileTextArea.insert('end', '\n')
-                self.__main_window_ui.rightFileTextArea.insert('end', '\n')
-
-            if line['code'] == DiffCode.LEFTONLY:
-                self.__main_window_ui.leftLinenumbers.insert('end', str(leftlineno) + '\n', 'line')
-                self.__main_window_ui.rightLinenumbers.insert('end', '\n', 'line')
-                leftlineno += 1
-            elif line['code'] == DiffCode.RIGHTONLY:
-                self.__main_window_ui.leftLinenumbers.insert('end', '\n', 'line')
-                self.__main_window_ui.rightLinenumbers.insert('end', str(rightlineno) + '\n', 'line')
-                rightlineno += 1
+        leftFileContents = rightFileContents = ''
+        errors = []
+        for side in ('left', 'right'):
+            path = self.leftFile if side == 'left' else self.rightFile
+            if os.path.isdir(path):
+                continue
+            try:
+                contents = read_text_file(path)
+            except Exception as e:
+                errors.append('%s\n%s' % (path, e))
+                contents = ''
+            if side == 'left':
+                leftFileContents = contents
             else:
-                self.__main_window_ui.leftLinenumbers.insert('end', str(leftlineno) + '\n', 'line')
-                self.__main_window_ui.rightLinenumbers.insert('end', str(rightlineno) + '\n', 'line')
-                leftlineno += 1
-                rightlineno += 1
+                rightFileContents = contents
+        if errors:
+            showerror('Could not read file', '\n\n'.join(errors))
 
-        # calc width of line numbers texts and set it
-        self.__main_window_ui.leftLinenumbers.config(width=len(str(leftlineno)))
-        self.__main_window_ui.rightLinenumbers.config(width=len(str(rightlineno)))
-
-        # disable text areas to prevent further editing
-        self.__main_window_ui.leftFileTextArea.config(state=DISABLED)
-        self.__main_window_ui.rightFileTextArea.config(state=DISABLED)
-        self.__main_window_ui.leftLinenumbers.config(state=DISABLED)
-        self.__main_window_ui.rightLinenumbers.config(state=DISABLED)
+        render_diff(self.__main_window_ui, leftFileContents, rightFileContents)
 
     def __cut(self):
         area = self.__getActiveTextArea()
@@ -306,9 +291,11 @@ class MainWindow:
         if line:
             try:
                 linenumber = int(line)
-                self.__main_window_ui.leftFileTextArea.see(float(linenumber) + 5)
-            except:
-                pass
+            except ValueError:
+                return
+            total = int(self.__main_window_ui.leftFileTextArea.index('end-1c').split('.')[0]) or 1
+            # scroll both panes (and line numbers) so that line is near the top
+            self.__main_window_ui.scrollBothY('moveto', max(0.0, (linenumber - 3) / float(total)))
 
     def __startFindText(self):
         self.__main_window_ui.searchTextDialog.grid()
@@ -326,12 +313,28 @@ class MainWindow:
             self.__main_window_ui.leftFileTextArea.tag_remove('search', 1.0, END)
             self.__main_window_ui.leftFileTextArea.tag_add('search', leftpos, '%s + %sc' % (leftpos, len(term)))
             # scroll to position plus five lines for visibility
-            self.__main_window_ui.leftFileTextArea.see(float(leftpos) + 5)
+            self.__main_window_ui.leftFileTextArea.see(leftpos)
         if rightpos != -1:
             self.__main_window_ui.rightFileTextArea.tag_remove('search', 1.0, END)
             self.__main_window_ui.rightFileTextArea.tag_add('search', rightpos, '%s + %sc' % (rightpos, len(term)))
             # scroll to position plus five lines for visibility
-            self.__main_window_ui.rightFileTextArea.see(float(rightpos) + 5)
+            self.__main_window_ui.rightFileTextArea.see(rightpos)
+
+    # Function-by-function comparison of the current pair of Python files.
+    # If no pair of files is loaded (or a folder is selected), ask for two files.
+    def __compare_functions(self):
+        left, right = self.leftFile, self.rightFile
+        if not (left and right and os.path.isfile(left) and os.path.isfile(right)):
+            types = [('Python files', '*.py *.pyw'), ('All files', '*.*')]
+            left = askopenfilename(title='Compare functions - choose LEFT file', filetypes=types)
+            if not left:
+                return
+            right = askopenfilename(title='Compare functions - choose RIGHT file', filetypes=types)
+            if not right:
+                return
+            self.leftFile, self.rightFile = left, right
+            self.filesChanged()
+        self.functionWindow = open_function_compare(self.main_window, left, right, read_text_file, showerror)
 
     def __exit(self):
         self.main_window.destroy()

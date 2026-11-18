@@ -7,7 +7,7 @@ panes, with highlighting and line numbers. Used by the main window (whole
 files) and by the function-comparison window (one function at a time).
 """
 
-from difflibparser.difflibparser import DifflibParser, DiffCode
+from utilities.difflibparser import DifflibParser, DiffCode
 try:    # for Python2
     from Tkinter import NORMAL, DISABLED, END
 except ImportError:    # for Python3

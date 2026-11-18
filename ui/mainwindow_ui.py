@@ -44,6 +44,8 @@ class MainWindowUI:
 # +-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+
 # |                                     menu bar                                                  |
 # +-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+
+# |  toolbar: previous / next change, view options, export ...                   status text      |
+# +-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+
 # |               |                                     search bar                                |
 # |               |          search entry                                                 | button|
 # |               +-------+-------+-------+-------+-------+-------+-------+-------+-------+-------+
@@ -60,10 +62,11 @@ class MainWindowUI:
 # |   1   |   2   |   3   |   4   |   5   |   6   |   7   |   8   |   9   |  10   |  11   |  12   |
 
     # Rows
-    fileTreeRow = filePathLabelsRow = 0
-    searchTextRow = 1
-    uniScrollbarRow = lineNumbersRow = textAreasRow = 2
-    horizontalScrollbarRow = 3
+    toolbarRow = 0
+    fileTreeRow = filePathLabelsRow = 1
+    searchTextRow = 2
+    uniScrollbarRow = lineNumbersRow = textAreasRow = 3
+    horizontalScrollbarRow = 4
 
     # Columns
     fileTreeCol = 0
@@ -88,9 +91,13 @@ class MainWindowUI:
     selectTextColor = '#ffffff'     # ... with white text, readable on any diff colour
     inactiveSelectColor = '#6f97e0' # selection when the window is not focused
     purpleLight = '#F5EBFC'
+    blueColor = '#d6ecff'           # folder view: only line endings differ
+    foldColor = '#eef1f6'           # 'N unchanged lines hidden' bars
+    currentColor = '#9ec2f5'        # line numbers of the change you jumped to
 
     def __init__(self, window):
         self.main_window = window
+        self.main_window.grid_rowconfigure(self.toolbarRow, weight=0)
         self.main_window.grid_rowconfigure(self.filePathLabelsRow, weight=0)
         self.main_window.grid_rowconfigure(self.searchTextRow, weight=0)
         self.main_window.grid_rowconfigure(self.textAreasRow, weight=1)
@@ -125,12 +132,37 @@ class MainWindowUI:
         self.main_window.geometry('%dx%d+%d+%d' % (w, h, x, y))
         self.main_window.minsize(int(0.3 * sw), int(0.3 * sh))
 
+    def maximise_window(self):
+        try:
+            self.main_window.state('zoomed')            # Windows, macOS
+        except Exception:
+            try:
+                self.main_window.attributes('-zoomed', True)   # Linux
+            except Exception:
+                pass
+
+    # Toolbar (filled in by DiffView)
+    def create_toolbar(self):
+        self.toolbar = ttk.Frame(self.main_window, padding=(4, 3))
+        self.toolbar.grid(row=self.toolbarRow, column=0, columnspan=7, sticky=EW)
+        return self.toolbar
+
     # Menu bar
     def add_menu(self, menuName, commandList):
-        self.menus[menuName] = Menu(self.menubar,tearoff=0)
+        self.menus[menuName] = menu = Menu(self.menubar,tearoff=0)
         for c in commandList:
-            if 'separator' in c: self.menus[menuName].add_separator()
-            else: self.menus[menuName].add_command(label=c['name'], command=c['command'], accelerator=c['accelerator'] if 'accelerator' in c else '')
+            if 'separator' in c:
+                menu.add_separator()
+                continue
+            opts = dict(label=c['name'], accelerator=c.get('accelerator', ''))
+            if 'command' in c:
+                opts['command'] = c['command']
+            if 'variable' in c and 'value' in c:     # one of a set of choices
+                menu.add_radiobutton(variable=c['variable'], value=c['value'], **opts)
+            elif 'variable' in c:                    # on/off option
+                menu.add_checkbutton(variable=c['variable'], **opts)
+            else:
+                menu.add_command(**opts)
         self.menubar.add_cascade(label=menuName, menu=self.menus[menuName])
         self.main_window.config(menu=self.menubar)
 
@@ -163,7 +195,7 @@ class MainWindowUI:
         self.fileTreeView.tag_configure('green', background=self.greenColor)
         self.fileTreeView.tag_configure('yellow', background=self.yellowColor)
         self.fileTreeView.tag_configure('purpleLight', background=self.purpleLight)
-        self.fileTreeView.tag_configure('blue', background='#d6ecff')
+        self.fileTreeView.tag_configure('blue', background=self.blueColor)
 
         # hide it until needed
         self.fileTreeView.grid_remove()
@@ -182,16 +214,17 @@ class MainWindowUI:
         self.rightFileTextArea.config(font=self.text_area_font)
         self.rightFileTextArea.config(wrap='none')
 
-        # configuring highlight tags
-        self.leftFileTextArea.tag_configure('red', background=self.redColor)
-        self.leftFileTextArea.tag_configure('darkred', background=self.darkredColor)
-        self.leftFileTextArea.tag_configure('gray', background=self.grayColor)
-        self.leftFileTextArea.tag_configure('search', background=self.darkYellowColor)
-        self.rightFileTextArea.tag_configure('green', background=self.greenColor)
-        self.rightFileTextArea.tag_configure('darkgreen', background=self.darkgreenColor)
-        self.rightFileTextArea.tag_configure('gray', background=self.grayColor)
-        self.rightFileTextArea.tag_configure('search', background=self.darkYellowColor)
-        self.rightFileTextArea.tag_configure('purpleLight', background=self.purpleLight)
+        # highlight tags - every tag on both panes (the in-line view shows
+        # removed and added lines in one pane)
+        for area in (self.leftFileTextArea, self.rightFileTextArea):
+            area.tag_configure('red', background=self.redColor)
+            area.tag_configure('darkred', background=self.darkredColor)
+            area.tag_configure('green', background=self.greenColor)
+            area.tag_configure('darkgreen', background=self.darkgreenColor)
+            area.tag_configure('gray', background=self.grayColor)
+            area.tag_configure('fold', background=self.foldColor, foreground='#5a6578', justify='center')
+            area.tag_configure('message', foreground='#5a6578', justify='center', spacing1=30)
+            area.tag_configure('search', background=self.darkYellowColor)
 
         for area in (self.leftFileTextArea, self.rightFileTextArea):
             # changed characters stand out in bold as well as colour
@@ -222,6 +255,12 @@ class MainWindowUI:
         self.rightLinenumbers.grid(row=self.lineNumbersRow, column=self.rightLineNumbersCol, sticky=NS)
         self.rightLinenumbers.config(font=self.text_area_font)
         self.rightLinenumbers.tag_configure('line', justify='right')
+        for nums in (self.leftLinenumbers, self.rightLinenumbers):
+            nums.tag_configure('current', background=self.currentColor)
+            nums.tag_configure('fold', background=self.foldColor)
+            nums.tag_configure('red', background=self.redColor)
+            nums.tag_configure('green', background=self.greenColor)
+            nums.tag_raise('current')
 
         # disable the line numbers
         self.leftLinenumbers.config(state=DISABLED)

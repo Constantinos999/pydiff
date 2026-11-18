@@ -26,7 +26,8 @@ import textwrap
 import tokenize
 
 from ui.mainwindow_ui import MainWindowUI
-from ui.diffview import render_diff
+from ui.diffview import DiffView
+from utilities.textfiles import split_lines
 try:    # for Python2
     from Tkinter import Toplevel, W
 except ImportError:    # for Python3
@@ -96,7 +97,7 @@ def normalise(text):
 def extract_definitions(source):
     """Return [Definition] for the module code, every class, function and method."""
     tree = ast.parse(source)
-    lines = source.splitlines()
+    lines = split_lines(source)   # same line numbering as Python's parser
     defs = []
     seen = {}
 
@@ -174,7 +175,7 @@ def compare_definitions(left_defs, right_defs):
 # Window
 # --------------------------------------------------------------------------
 class FunctionCompareWindow(object):
-    def __init__(self, parent, left_path, right_path, left_source, right_source):
+    def __init__(self, parent, left_path, right_path, left_source, right_source, settings):
         self.left_source, self.right_source = left_source, right_source
         self.rows = compare_definitions(extract_definitions(left_source), extract_definitions(right_source))
         self.hide_same = False
@@ -187,16 +188,18 @@ class FunctionCompareWindow(object):
         ui.create_line_numbers()
         ui.create_scroll_bars()
         ui.create_file_treeview()
-        ui.leftFileTextArea.config(background=ui.whiteColor)
-        ui.rightFileTextArea.config(background=ui.whiteColor)
-        ui.leftFileLabel.config(text=left_path)
-        ui.rightFileLabel.config(text=right_path)
-        ui.add_menu('View', [
-            {'name': 'Show only differences', 'command': lambda: self.set_hide_same(True)},
-            {'name': 'Show everything', 'command': lambda: self.set_hide_same(False)},
+        self.view = DiffView(ui, settings)
+        self.view.set_titles(left_path, right_path)
+        ui.add_menu('File', [
+            {'name': 'Export This Comparison…', 'command': self.view.export, 'accelerator': 'Ctrl+E'},
             {'separator'},
             {'name': 'Close', 'command': self.window.destroy, 'accelerator': 'Esc'},
         ])
+        ui.add_menu('View', [
+            {'name': 'List: Only Differences', 'command': lambda: self.set_hide_same(True)},
+            {'name': 'List: Everything', 'command': lambda: self.set_hide_same(False)},
+            {'separator'},
+        ] + self.view.view_menu_items())
         self.window.bind('<Escape>', lambda *x: self.window.destroy())
 
         tv = self.tree = ui.fileTreeView
@@ -214,6 +217,9 @@ class FunctionCompareWindow(object):
         ui.fileTreeYScrollbar.grid()
         ui.fileTreeXScrollbar.grid()
         tv.bind('<<TreeviewSelect>>', lambda *x: self.show_selected())
+        # Alt+Up/Down move between changes, not between list entries
+        tv.bind('<Alt-Down>', lambda e: (self.view.next_change(), 'break')[1])
+        tv.bind('<Alt-Up>', lambda e: (self.view.previous_change(), 'break')[1])
 
         self.fill_tree()
         counts = {}
@@ -252,14 +258,14 @@ class FunctionCompareWindow(object):
             return
         row = self.items.get(sel[0])
         if row is None:
-            render_diff(self.ui, self.left_source, self.right_source)
+            self.view.show(self.left_source, self.right_source)
             return
         _, _, l, r = row
-        render_diff(self.ui, l.text if l else '', r.text if r else '',
-                    l.linenos if l else None, r.linenos if r else None)
+        self.view.show(l.text if l else '', r.text if r else '',
+                       l.linenos if l else None, r.linenos if r else None)
 
 
-def open_function_compare(parent, left_path, right_path, read_file, showerror):
+def open_function_compare(parent, left_path, right_path, read_file, showerror, settings):
     """Read both files and open the comparison window; report problems nicely."""
     sources = []
     for path in (left_path, right_path):
@@ -277,4 +283,4 @@ def open_function_compare(parent, left_path, right_path, read_file, showerror):
             showerror('Compare Functions', 'Could not read file:\n%s\n%s' % (path, e))
             return None
         sources.append(text)
-    return FunctionCompareWindow(parent, left_path, right_path, sources[0], sources[1])
+    return FunctionCompareWindow(parent, left_path, right_path, sources[0], sources[1], settings)

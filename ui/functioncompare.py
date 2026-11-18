@@ -21,6 +21,7 @@ line numbers from each file.
 
 import ast
 import io
+import os
 import re
 import textwrap
 import tokenize
@@ -175,7 +176,11 @@ def compare_definitions(left_defs, right_defs):
 # Window
 # --------------------------------------------------------------------------
 class FunctionCompareWindow(object):
-    def __init__(self, parent, left_path, right_path, left_source, right_source, settings):
+    def __init__(self, parent, left_path, right_path, left_source, right_source, settings,
+                 read_file=None, showerror=None, get_path=None):
+        self.left_path, self.right_path = left_path, right_path
+        self.read_file, self.showerror = read_file, showerror
+        self.mtimes = self._file_times()
         self.left_source, self.right_source = left_source, right_source
         self.rows = compare_definitions(extract_definitions(left_source), extract_definitions(right_source))
         self.hide_same = False
@@ -188,10 +193,15 @@ class FunctionCompareWindow(object):
         ui.create_line_numbers()
         ui.create_scroll_bars()
         ui.create_file_treeview()
-        self.view = DiffView(ui, settings)
+        self.view = DiffView(ui, settings, get_path=get_path,
+                             refresh=self.refresh if read_file else None)
         self.view.set_titles(left_path, right_path)
         ui.add_menu('File', [
             {'name': 'Export This Comparison…', 'command': self.view.export, 'accelerator': 'Ctrl+E'},
+            {'separator'},
+            {'name': 'Open Left File in Editor', 'command': lambda: self.view.open_in_editor('left')},
+            {'name': 'Open Right File in Editor', 'command': lambda: self.view.open_in_editor('right')},
+            {'name': 'Refresh', 'command': self.view.refresh, 'accelerator': 'F5'},
             {'separator'},
             {'name': 'Close', 'command': self.window.destroy, 'accelerator': 'Esc'},
         ])
@@ -201,6 +211,7 @@ class FunctionCompareWindow(object):
             {'separator'},
         ] + self.view.view_menu_items())
         self.window.bind('<Escape>', lambda *x: self.window.destroy())
+        self.window.bind('<FocusIn>', lambda e: self._refresh_if_changed())
 
         tv = self.tree = ui.fileTreeView
         tv['columns'] = ('status', 'left', 'right')
@@ -234,6 +245,43 @@ class FunctionCompareWindow(object):
         tv.selection_set(first or tv.get_children()[0])
         self.window.focus_set()
 
+    def _file_times(self):
+        try:
+            return tuple(os.path.getmtime(p) for p in (self.left_path, self.right_path))
+        except (OSError, TypeError):
+            return None
+
+    def _refresh_if_changed(self):
+        if self.read_file and self.mtimes is not None and self._file_times() != self.mtimes:
+            self.view.refresh()
+
+    def refresh(self):
+        """Re-read both files and compare their functions again, keeping the selection."""
+        if not self.read_file:
+            return
+        self.mtimes = self._file_times()
+        try:
+            left, right = self.read_file(self.left_path), self.read_file(self.right_path)
+            rows = compare_definitions(extract_definitions(left), extract_definitions(right))
+        except SyntaxError as e:
+            if self.showerror:
+                self.showerror('Refresh', 'A file can no longer be read as Python code (line %s: %s).\n'
+                               'Showing the previous comparison.' % (e.lineno, e.msg))
+            return
+        except Exception as e:
+            if self.showerror:
+                self.showerror('Refresh', 'Could not read the files again:\n%s' % e)
+            return
+        sel = self.tree.selection()
+        selected = self.tree.item(sel[0])['text'] if sel else None
+        self.left_source, self.right_source, self.rows = left, right, rows
+        self.fill_tree()
+        target = next((i for i in self.tree.get_children() if self.tree.item(i)['text'] == selected),
+                      self.tree.get_children()[0])
+        self.tree.selection_set(target)
+        self.tree.see(target)
+        self.show_selected()
+
     def fill_tree(self):
         tv = self.tree
         tv.delete(*tv.get_children())
@@ -265,7 +313,7 @@ class FunctionCompareWindow(object):
                        l.linenos if l else None, r.linenos if r else None)
 
 
-def open_function_compare(parent, left_path, right_path, read_file, showerror, settings):
+def open_function_compare(parent, left_path, right_path, read_file, showerror, settings, get_path=None):
     """Read both files and open the comparison window; report problems nicely."""
     sources = []
     for path in (left_path, right_path):
@@ -283,4 +331,5 @@ def open_function_compare(parent, left_path, right_path, read_file, showerror, s
             showerror('Compare Functions', 'Could not read file:\n%s\n%s' % (path, e))
             return None
         sources.append(text)
-    return FunctionCompareWindow(parent, left_path, right_path, sources[0], sources[1], settings)
+    return FunctionCompareWindow(parent, left_path, right_path, sources[0], sources[1], settings,
+                                 read_file=read_file, showerror=showerror, get_path=get_path)

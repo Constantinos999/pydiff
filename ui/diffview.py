@@ -22,14 +22,15 @@ import webbrowser
 from utilities.diffengine import (compare_lines, visible_rows, summary,
                                   SAME, CHANGED, LEFT, RIGHT)
 from utilities.textfiles import split_lines
+from utilities import editor
 try:    # for Python2
-    from Tkinter import NORMAL, DISABLED, END, BooleanVar, StringVar, LEFT as PACK_LEFT, RIGHT as PACK_RIGHT, Y
+    from Tkinter import NORMAL, DISABLED, END, BooleanVar, StringVar, Menu, LEFT as PACK_LEFT, RIGHT as PACK_RIGHT, Y
     import ttk
     from tkFileDialog import asksaveasfilename
     from tkMessageBox import askyesno, showinfo, showerror
     from tkSimpleDialog import askinteger
 except ImportError:    # for Python3
-    from tkinter import NORMAL, DISABLED, END, BooleanVar, StringVar, LEFT as PACK_LEFT, RIGHT as PACK_RIGHT, Y
+    from tkinter import NORMAL, DISABLED, END, BooleanVar, StringVar, Menu, LEFT as PACK_LEFT, RIGHT as PACK_RIGHT, Y
     from tkinter import ttk
     from tkinter.filedialog import asksaveasfilename
     from tkinter.messagebox import askyesno, showinfo, showerror
@@ -37,9 +38,13 @@ except ImportError:    # for Python3
 
 
 class DiffView(object):
-    def __init__(self, ui, settings, extra_buttons=()):
-        """extra_buttons: [(label, command)] added to the toolbar after the standard ones."""
+    def __init__(self, ui, settings, extra_buttons=(), get_path=None, refresh=None):
+        """extra_buttons: [(label, command)] added to the toolbar after the standard ones.
+        get_path(side): the file shown on 'left' or 'right' (for Open in Editor),
+        or None. refresh(): re-read the files and compare again."""
         self.ui = ui
+        self.get_path = get_path
+        self.refresh_callback = refresh
         self.window = ui.main_window
         self.settings = settings
         self.rows = []
@@ -50,6 +55,7 @@ class DiffView(object):
         self.current = -1             # index into self.blocks of the change jumped to
         self.has_content = False
         self.display_lnos = []
+        self.display_rnos = []
 
         self.view_var = StringVar(value='inline' if settings.get('inline') else 'side')
         self.only_var = BooleanVar(value=settings.get('only_changes'))
@@ -58,6 +64,9 @@ class DiffView(object):
         self.window.bind('<Alt-Down>', lambda e: self.next_change())
         self.window.bind('<Alt-Up>', lambda e: self.previous_change())
         self.window.bind('<Control-e>', lambda e: self.export())
+        if refresh:
+            self.window.bind('<F5>', lambda e: self.refresh())
+        self._build_context_menu()
         self._apply_layout()
 
     # ------------------------------------------------------------------ toolbar
@@ -79,6 +88,17 @@ class DiffView(object):
                         style='Toolbutton', command=self._only_changed).pack(side=PACK_LEFT)
         sep()
         ttk.Button(bar, text='Export…', command=self.export).pack(side=PACK_LEFT)
+        if self.get_path:
+            edit = ttk.Menubutton(bar, text='Open in editor')
+            menu = Menu(edit, tearoff=0)
+            menu.add_command(label='Left file', command=lambda: self.open_in_editor('left'))
+            menu.add_command(label='Right file', command=lambda: self.open_in_editor('right'))
+            menu.add_separator()
+            menu.add_command(label='Choose Editor…', command=self.choose_editor)
+            edit['menu'] = menu
+            edit.pack(side=PACK_LEFT, padx=(3, 0))
+        if self.refresh_callback:
+            ttk.Button(bar, text='⟳ Refresh', command=self.refresh).pack(side=PACK_LEFT, padx=(3, 0))
         for label, command in extra_buttons:
             ttk.Button(bar, text=label, command=command).pack(side=PACK_LEFT, padx=(3, 0))
         ttk.Label(bar, textvariable=self.status_var, anchor='e').pack(side=PACK_RIGHT, padx=(10, 4))
@@ -227,6 +247,7 @@ class DiffView(object):
             elif r.kind == RIGHT:
                 lt.append(('gray', n, 0, None)); rt.append(('green', n, 0, None))
         self.display_lnos = [int(x) if x else None for x in LN]
+        self.display_rnos = [int(x) if x else None for x in RN]
         self._set_blocks(kinds)
         return [(self.ui.leftFileTextArea, L, lt), (self.ui.rightFileTextArea, R, rt),
                 (self.ui.leftLinenumbers, LN, lnt), (self.ui.rightLinenumbers, RN, rnt)]
@@ -234,6 +255,7 @@ class DiffView(object):
     def _layout_inline(self, items):
         T, N, tt, nt, kinds = [], [], [], [], []
         lnos = self.display_lnos = []
+        rnos = self.display_rnos = []
         width = max([len(str(r.lno or '')) for r in self.rows] + [len(str(r.rno or '')) for r in self.rows] + [1])
 
         def gutter(l, r, sym):
@@ -259,21 +281,25 @@ class DiffView(object):
                 T.append(u'\u22ef  %d unchanged line%s hidden  \u22ef' % (item, '' if item == 1 else 's'))
                 N.append('')
                 lnos.append(None)
+                rnos.append(None)
                 tt.append(('fold', n, 0, None)); nt.append(('fold', n, 0, None))
                 kinds.append('fold')
             elif not isinstance(item, tuple):
                 T.append(item.left); N.append(gutter(item.lno, item.rno, ' ')); kinds.append(SAME)
                 lnos.append(item.lno)
+                rnos.append(item.rno)
             elif item[0] == 'old':
                 r = item[1]
                 T.append(r.left); N.append(gutter(r.lno, None, '-')); kinds.append(r.kind)
                 lnos.append(r.lno)
+                rnos.append(None)
                 tt.append(('red', n, 0, None)); nt.append(('red', n, 0, None))
                 tt += [('darkred', n, a, b) for a, b in r.lchg]
             else:
                 r = item[1]
                 T.append(r.right); N.append(gutter(None, r.rno, '+')); kinds.append(r.kind)
                 lnos.append(None)
+                rnos.append(r.rno)
                 tt.append(('green', n, 0, None)); nt.append(('green', n, 0, None))
                 tt += [('darkgreen', n, a, b) for a, b in r.rchg]
         self._set_blocks(kinds)
@@ -385,6 +411,109 @@ class DiffView(object):
                 return i
             last = i
         return last
+
+    # ------------------------------------------------------------------ copy / select / editor / refresh
+    def _build_context_menu(self):
+        self._menu_area = None
+        menu = self.context_menu = Menu(self.window, tearoff=0)
+        menu.add_command(label='Copy', accelerator='Ctrl+C', command=lambda: self._copy(self._menu_area))
+        menu.add_command(label='Select All', accelerator='Ctrl+A', command=lambda: self._select_all(self._menu_area))
+        if self.get_path:
+            menu.add_separator()
+            menu.add_command(label='Open Left File in Editor', command=lambda: self.open_in_editor('left'))
+            menu.add_command(label='Open Right File in Editor', command=lambda: self.open_in_editor('right'))
+        if self.refresh_callback:
+            menu.add_separator()
+            menu.add_command(label='Refresh', accelerator='F5', command=self.refresh)
+        buttons = ('<Button-2>', '<Button-3>') if self.window.tk.call('tk', 'windowingsystem') == 'aqua' else ('<Button-3>',)
+        for area in (self.ui.leftFileTextArea, self.ui.rightFileTextArea):
+            for b in buttons:
+                area.bind(b, self._show_context_menu, add='+')
+            area.bind('<Control-a>', lambda e: (self._select_all(e.widget), 'break')[1])
+            area.bind('<Control-A>', lambda e: (self._select_all(e.widget), 'break')[1])
+
+    def _show_context_menu(self, event):
+        self._menu_area = event.widget
+        event.widget.focus_set()
+        has_sel = bool(event.widget.tag_ranges('sel'))
+        self.context_menu.entryconfigure(0, state=NORMAL if has_sel else DISABLED)
+        if self.get_path:
+            label = editor.editor_label(self.settings)
+            self.context_menu.entryconfigure(3, label='Open Left File in %s' % label,
+                                             state=NORMAL if self.get_path('left') else DISABLED)
+            self.context_menu.entryconfigure(4, label='Open Right File in %s' % label,
+                                             state=NORMAL if self.get_path('right') else DISABLED)
+        try:
+            self.context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.context_menu.grab_release()
+
+    def _copy(self, area):
+        if area is not None and area.tag_ranges('sel'):
+            area.event_generate('<<Copy>>')
+
+    def _select_all(self, area):
+        if area is None:
+            return
+        area.focus_set()
+        area.tag_remove('sel', '1.0', END)
+        area.tag_add('sel', '1.0', 'end-1c')
+
+    def current_line(self, side):
+        """Real line number (in the left or right file) of the change you last
+        jumped to, or else of the top of the screen. Used to open the editor there."""
+        numbers = self.display_lnos if side == 'left' else self.display_rnos
+        if not numbers:
+            return 1
+        if self.current >= 0 and self.blocks:
+            start = self.blocks[self.current][0]
+        else:
+            start = self._top_line()
+        for i in range(start, len(numbers) + 1):
+            if numbers[i - 1]:
+                return numbers[i - 1]
+        return next((n for n in reversed(numbers) if n), 1)
+
+    def open_in_editor(self, side):
+        path = self.get_path(side) if self.get_path else None
+        if not path:
+            showinfo('Open in editor', 'There is no %s file that can be opened.\n\n(If it is the old '
+                     'version fetched from git, that is only a temporary copy.)' % side, parent=self.window)
+            return
+        try:
+            editor.open_in_editor(path, self.current_line(side), self.settings)
+        except OSError as e:
+            showerror('Open in editor', str(e), parent=self.window)
+
+    def choose_editor(self):
+        try:
+            from tkinter.filedialog import askopenfilename
+        except ImportError:
+            from tkFileDialog import askopenfilename
+        current = editor.find_editor(self.settings)
+        types = [('Programs', '*.exe'), ('All files', '*.*')] if os.name == 'nt' else [('All files', '*')]
+        path = askopenfilename(parent=self.window, title='Choose the text editor program to use',
+                               initialdir=os.path.dirname(current) if current else None, filetypes=types)
+        if path:
+            self.settings.set('editor', path)
+            showinfo('Choose editor', 'Files will now open in:\n%s' % path, parent=self.window)
+
+    def refresh(self):
+        """Compare again (after a file was edited), keeping your place."""
+        if not self.refresh_callback:
+            return
+        top = self.ui.leftFileTextArea.yview()[0]
+        current = self.current
+        self.refresh_callback()
+        self.window.update_idletasks()
+        self.ui.scrollBothY('moveto', top)
+        if 0 <= current < len(self.blocks):
+            self.current = current
+            start, end = self.blocks[current]
+            for nums in (self.ui.leftLinenumbers, self.ui.rightLinenumbers):
+                nums.tag_remove('current', '1.0', END)
+                nums.tag_add('current', '%d.0' % start, '%d.0' % (end + 1))
+            self._update_status()
 
     # ------------------------------------------------------------------ export
     def export(self):

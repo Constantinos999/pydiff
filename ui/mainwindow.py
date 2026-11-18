@@ -30,6 +30,7 @@ from ui.functioncompare import open_function_compare
 from utilities.textfiles import read_file, read_text_file, BinaryFileError, same_ignoring_line_endings
 from utilities.settings import Settings
 from utilities import gittools
+import tempfile
 try:    # for Python2
     from Tkinter import *
     from tkFileDialog import askopenfilename, askdirectory
@@ -55,6 +56,8 @@ class MainWindow:
         self.rightFile = ''
         self.leftDir = self.rightDir = None
         self.functionWindow = None
+        self.titles = (None, None)     # custom pane titles (e.g. git commit), kept on refresh
+        self.mtimes = None             # file times at last load, for automatic refresh
 
         ui.center_window()
         if self.settings.get('start_maximised'):
@@ -66,7 +69,8 @@ class MainWindow:
         ui.create_scroll_bars()
         ui.create_file_treeview()
         self.view = DiffView(ui, self.settings,
-                             extra_buttons=[('Compare functions', self.__compare_functions)])
+                             extra_buttons=[('Compare functions', self.__compare_functions)],
+                             get_path=self.__editable_path, refresh=self.refresh)
 
         self.maximised_var = BooleanVar(value=self.settings.get('start_maximised'))
         self.line_endings_var = BooleanVar(value=self.settings.get('ignore_line_endings'))
@@ -79,11 +83,17 @@ class MainWindow:
             {'separator'},
             {'name': 'Export Results…', 'command': self.view.export, 'accelerator': 'Ctrl+E'},
             {'separator'},
+            {'name': 'Open Left File in Editor', 'command': lambda: self.view.open_in_editor('left')},
+            {'name': 'Open Right File in Editor', 'command': lambda: self.view.open_in_editor('right')},
+            {'name': 'Choose Editor…', 'command': self.view.choose_editor},
+            {'name': 'Refresh', 'command': self.view.refresh, 'accelerator': 'F5'},
+            {'separator'},
             {'name': 'Exit', 'command': self.__exit, 'accelerator': 'Alt+F4'}
             ])
         ui.add_menu('Edit', [
             {'name': 'Find', 'command': self.__startFindText, 'accelerator': 'Ctrl+F'},
             {'name': 'Copy', 'command': self.__copy, 'accelerator': 'Ctrl+C'},
+            {'name': 'Select All', 'command': self.__select_all, 'accelerator': 'Ctrl+A'},
             {'separator'},
             {'name': 'Go To Line', 'command': self.__goToLine, 'accelerator': 'Ctrl+G'}
             ])
@@ -128,6 +138,8 @@ class MainWindow:
         w.bind('<Control-l>', lambda *x: self.__compare_with_commit('HEAD'))
         w.bind('<Escape>', lambda *x: self.__endFindText())
         w.bind('<F3>', self.__main_window_ui.searchTextDialog.nextResult)
+        # coming back to pydiff after editing a file elsewhere: compare again automatically
+        w.bind('<FocusIn>', lambda e: self.__refresh_if_changed())
 
     # ------------------------------------------------------------- options
     def __toggle_maximised(self):
@@ -258,6 +270,8 @@ class MainWindow:
     # Callback for changing a file path
     def filesChanged(self, left_title=None, right_title=None):
         view = self.view
+        self.titles = (left_title, right_title)
+        self.mtimes = self.__file_times()
         if not self.leftFile or not self.rightFile:
             view.clear()
             return
@@ -302,6 +316,65 @@ class MainWindow:
         if left.newline and right.newline and left.newline != right.newline:
             notes.append('Line endings: %s → %s' % (left.newline, right.newline))
         view.show(left.text, right.text, notes=notes)
+
+    # ------------------------------------------------------------- refresh / editor
+    def __file_times(self):
+        try:
+            return tuple(os.path.getmtime(p) for p in (self.leftFile, self.rightFile))
+        except (OSError, TypeError, ValueError):
+            return None
+
+    def refresh(self):
+        """Re-read the files (and re-scan the folders) and compare again."""
+        if self.leftDir and self.rightDir:
+            selected = (self.leftFile, self.rightFile)
+            self.__load_directories(self.leftDir, self.rightDir)
+            if all(selected):
+                self.__select_tree_item(selected)
+        elif self.leftFile and self.rightFile:
+            self.filesChanged(*self.titles)
+        fw = self.functionWindow
+        if fw is not None and fw.window.winfo_exists():
+            fw.refresh()
+
+    def __refresh_if_changed(self):
+        if self.leftFile and self.rightFile and self.mtimes is not None:
+            if self.__file_times() != self.mtimes:
+                self.view.refresh()
+
+    def __select_tree_item(self, paths):
+        tree = self.__main_window_ui.fileTreeView
+
+        def walk(item):
+            for child in tree.get_children(item):
+                values = tree.item(child)['values']
+                if values and (str(values[0]), str(values[1])) == paths:
+                    return child
+                found = walk(child)
+                if found:
+                    return found
+            return None
+
+        item = walk('')
+        if item:
+            parent = tree.parent(item)
+            while parent:
+                tree.item(parent, open=True)
+                parent = tree.parent(parent)
+            tree.see(item)
+            tree.focus(item)
+            tree.selection_set(item)
+            self.leftFile, self.rightFile = paths
+            self.filesChanged()
+
+    def __editable_path(self, side):
+        path = self.leftFile if side == 'left' else self.rightFile
+        if not path or not os.path.isfile(path):
+            return None
+        # the old version fetched from git is only a temporary copy: not worth editing
+        if os.path.dirname(os.path.abspath(path)) == os.path.join(tempfile.gettempdir(), 'pydiff_git'):
+            return None
+        return path
 
     def treeViewItemSelected(self):
         item_id = self.__main_window_ui.fileTreeView.focus()
@@ -361,6 +434,12 @@ class MainWindow:
         showinfo('Use pydiff with git', 'Done. Run "git difftool" in any repository to compare changes in pydiff.')
 
     # ------------------------------------------------------------- edit
+    def __select_all(self):
+        area = self.__getActiveTextArea() or self.__main_window_ui.leftFileTextArea
+        area.focus_set()
+        area.tag_remove('sel', '1.0', END)
+        area.tag_add('sel', '1.0', 'end-1c')
+
     def __copy(self):
         area = self.__getActiveTextArea()
         if area:
@@ -422,7 +501,8 @@ class MainWindow:
             self.leftFile, self.rightFile = left, right
             self.filesChanged()
         self.functionWindow = open_function_compare(self.main_window, left, right, read_text_file,
-                                                    showerror, self.settings)
+                                                    showerror, self.settings,
+                                                    get_path=self.__editable_path)
 
     def __exit(self):
         self.main_window.destroy()

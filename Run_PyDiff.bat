@@ -13,22 +13,18 @@ setlocal
 cd /d "%~dp0"
 title PyDiff launcher
 
-rem ---- 1. find a working Python 3 (skips the Microsoft Store stub) ----
+rem ---- 1. find a working Python, version 3.8 or NEWER ----
+rem  Any later version is accepted (3.13, 3.20, 4.x ...). Each candidate is
+rem  asked for its own version, so the Microsoft Store "python" placeholder,
+rem  which is not a real Python, is skipped automatically.
+rem  "py" on its own runs the newest Python installed, so it is tried first.
 set "PY="
 set "PYW="
 set "PYWEXE="
-py -3 -c "import sys" >nul 2>&1 && (
-    set "PY=py -3"
-    set "PYW=pyw -3"
-    set "PYWEXE=pyw"
-)
-if not defined PY (
-    python -c "import sys; sys.exit(sys.version_info[0] < 3)" >nul 2>&1 && (
-        set "PY=python"
-        set "PYW=pythonw"
-        set "PYWEXE=pythonw"
-    )
-)
+call :try_python "py" "pyw"
+if not defined PY call :try_python "py -3" "pyw -3"
+if not defined PY call :try_python "python" "pythonw"
+if not defined PY call :try_python "python3" "pythonw"
 if not defined PY goto :no_python
 
 rem ---- 2. check / install dependencies (fast if all present) ----
@@ -50,8 +46,17 @@ if errorlevel 1 (
 )
 exit /b 0
 
+:try_python
+rem  %1 = command to run Python, %2 = matching no-console command
+%~1 -c "import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)" >nul 2>&1
+if errorlevel 1 exit /b 0
+set "PY=%~1"
+set "PYW=%~2"
+for /f "tokens=1" %%a in ("%~2") do set "PYWEXE=%%a"
+exit /b 0
+
 :no_python
-echo Python 3 was not found on this computer.
+echo Python 3.8 or newer was not found on this computer.
 echo.
 where winget >nul 2>&1
 if errorlevel 1 goto :manual_python
@@ -64,7 +69,7 @@ pause
 exit /b 0
 
 :manual_python
-echo Please install Python 3 from https://www.python.org/downloads/
+echo Please install Python 3.8 or newer from https://www.python.org/downloads/
 echo (tick "Add python.exe to PATH" and keep "tcl/tk and IDLE" selected),
 echo then double-click this launcher again.
 start "" https://www.python.org/downloads/

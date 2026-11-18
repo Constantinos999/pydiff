@@ -90,7 +90,7 @@ Clicking an entry shows the diff of just that function, with real line numbers. 
 - **Why `ui/diffview.py`:** the side-by-side drawing code was moved out of `MainWindow` into a shared `render_diff()` function, so the main window and the function window use the same code. It also accepts real line numbers, so a single function shows its true position in each file.
 
 ### One-click Windows launcher: `Run_PyDiff.bat`
-- Finds a working Python 3. It skips the Microsoft Store placeholder `python.exe`, which isn't a real Python.
+- Finds a working Python **3.8 or newer**. Any later version is accepted, including a future 4.x, and the newest installed is preferred. It skips the Microsoft Store placeholder `python.exe`, which isn't a real Python.
 - If no Python is found, offers to install it with `winget`, or opens the python.org download page.
 - Runs the dependency check, then starts pydiff with `pythonw`/`pyw`, so no command window stays open.
 - Passes on any files dropped onto it, so you can drag two files or folders onto the launcher to compare them.

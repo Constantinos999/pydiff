@@ -10,6 +10,11 @@ Every bug listed under "Bug fixes" was reproduced with the original code before 
 
 - **8 bug fixes**: wrong or garbled text, scrolling, search, folder comparison and more.
 - **New: function-by-function comparison** for Python files.
+- **New: faster comparison engine**: large, heavily edited files compare in a fraction of a second rather than minutes.
+- **New: toolbar** with previous/next change navigation, side-by-side or **in-line** view, **only changes** mode, and **export** to HTML or .diff.
+- **New: git integration**: compare a file with its last (or any) commit, and use pydiff as git's diff viewer.
+- **New: UTF-16 and binary file handling**, encoding and line-ending notes, and an option to ignore line-ending-only differences in folder comparisons.
+- **New: start maximised**, and view choices remembered between runs.
 - **New: one-click Windows launcher** (`Run_PyDiff.bat`) with automatic dependency checks.
 - **Clearer highlighting**: readable text selection, bolder changed characters.
 - **Better error handling**: problems are reported instead of failing silently.
@@ -61,7 +66,7 @@ Every bug listed under "Bug fixes" was reproduced with the original code before 
 - **Files:** `ui/mainwindow.py`
 
 ### 8. Smaller fixes
-- The Paste menu item showed the shortcut **Ctrl+P** instead of **Ctrl+V**.
+- The Paste menu item showed the shortcut **Ctrl+P** instead of **Ctrl+V**. (Cut and Paste were later removed from the Edit menu altogether: the panes are read-only, so they never did anything.)
 - Cancelling the second file in *Compare Files* left the window half-loaded; it now cancels cleanly.
 - `utilities/fileio.py` called `showerror` without importing it, so it would crash if a file failed to load.
 - Selecting a file in the folder tree could misread paths that look like numbers (Tk converts them to integers); paths are now always treated as text.
@@ -86,8 +91,7 @@ Both files are parsed with Python's own parser (the standard `ast` module). Ever
 
 Clicking an entry shows the diff of just that function, with real line numbers. Code outside any function (imports, constants) is grouped as *(module-level code)*. A class entry covers the class's own lines (header, class attributes), while its methods are listed separately. *View → Show only differences* hides unchanged entries.
 
-- **New files:** `ui/functioncompare.py` (parsing, matching and the window), `ui/diffview.py`
-- **Why `ui/diffview.py`:** the side-by-side drawing code was moved out of `MainWindow` into a shared `render_diff()` function, so the main window and the function window use the same code. It also accepts real line numbers, so a single function shows its true position in each file.
+- **New files:** `ui/functioncompare.py` (parsing, matching and the window). The drawing is shared with the main window through `ui/diffview.py` (see below), so the function window has the same toolbar and views.
 
 ### One-click Windows launcher: `Run_PyDiff.bat`
 - Finds a working Python **3.8 or newer**. Any later version is accepted, including a future 4.x, and the newest installed is preferred. It skips the Microsoft Store placeholder `python.exe`, which isn't a real Python.
@@ -109,8 +113,48 @@ Checks are quick, and anything already installed is left alone.
 
 ### Works when downloaded as a ZIP
 - **Problem:** The original kept the diff parser (`difflibparser`) as a git *submodule*. GitHub's **Download ZIP** doesn't include submodules, so ZIP downloads had an empty `difflibparser` folder and pydiff couldn't start.
-- **Fix:** An unmodified copy of `difflibparser.py` (same author, same MIT licence, with its original copyright notice) is now included directly as `utilities/difflibparser.py`, and pydiff uses that copy. Both ZIP downloads and plain `git clone` now work with no extra steps. The old submodule folder is no longer used.
-- **Files:** `utilities/difflibparser.py` (new), `ui/diffview.py`, `pydiff.py`
+- **Fix:** At first, a copy of the parser was included directly in the repository. It has since been replaced altogether by pydiff's own comparison engine (see *New comparison engine* below), so pydiff no longer needs the submodule at all. Both ZIP downloads and plain `git clone` work with no extra steps; the old `difflibparser` submodule folder is unused.
+- **Files:** `ui/diffview.py`, `pydiff.py`
+
+### New comparison engine (much faster)
+- **Problem:** The original used `difflib.ndiff`, which compares every removed line with every added line inside a changed block, looking for the best match. On large files with lots of edits this is very slow. In testing, 600 reformatted lines took **15 seconds**, and time grows with the square of the block size.
+- **Fix:** `utilities/diffengine.py` matches whole lines first (`difflib.SequenceMatcher`), then pairs each edited line with its closest partner within a few lines, and only then works out which characters changed. As in `ndiff`, blank lines aren't used as anchors, so an inserted blank line doesn't split an edited line from its new version.
+- **Result:** the same 3,000-line reformatted file takes **0.7 seconds**; two 20,000-line files with 2,000 scattered edits are compared *and drawn* in about **0.2 seconds**. Drawing is also faster: all text is inserted in one go and then coloured, instead of line by line and character by character.
+- The engine produces one shared list of rows, which the side-by-side view, the in-line view, *Only changes*, navigation and export all use.
+- **Files:** `utilities/diffengine.py` (new). The old `difflibparser` is no longer used.
+
+### Toolbar and views (`ui/diffview.py`)
+A toolbar above the panes, in both the main window and the function window:
+- **▲ Previous / ▼ Next change** (also **Alt+Up / Alt+Down**, and in the View menu). The status text shows *"Change 3 of 12"* and the change's line numbers are highlighted.
+- **Side by side / In-line.** The in-line view uses one pane: in each block of changes, the removed lines (red, marked `-`) are shown above the added ones (green, `+`), with both files' line numbers in the margin, as on GitHub.
+- **Only changes** hides unchanged stretches, leaving a bar saying *"⋯ 120 unchanged lines hidden ⋯"*. *View → Lines of Context Around Changes* sets how many unchanged lines are kept around each change (default 3).
+- **Status text** summarising the differences (*"5 changes (lines: 3 edited, 1 removed, 4 added)"*), plus notes when the two files' encodings or line endings differ.
+- **Go To Line** now goes to the correct line in every view (it uses the real line numbers, not screen position).
+
+### Export results
+**File → Export Results…** (**Ctrl+E**) or the **Export…** button saves:
+- an **HTML report**: a self-contained web page matching the current view (side by side or in-line, all lines or only changes), with the same colours and character-level highlighting. It offers to open it in your browser straight away.
+- a **unified diff / patch file** (`.diff`, `.patch`): the standard format used by git and patch tools.
+
+### Git integration (`utilities/gittools.py`)
+A new **Git** menu:
+- **Compare File With Last Commit** (**Ctrl+L**) and **Compare File With Commit…** (any commit, branch or tag, e.g. `HEAD~1`). The committed version is fetched with `git show` into a temporary file and compared with the current file. Clear messages explain if git isn't installed, the file isn't in a repository, the commit doesn't exist, or the file is new since that commit.
+- **Use pydiff as Git's Diff Viewer…** shows the exact commands, asks first, then registers pydiff with `git config --global` so that `git difftool` (and `git difftool -d` for whole folders) opens pydiff. `git diff` is unaffected. Tested with paths containing spaces.
+
+### Text encodings and binary files (`utilities/textfiles.py`)
+- **UTF-16** text files (with or without a byte-order mark) are now read correctly. Before, they showed as spaced-out gibberish. Windows writes UTF-16 for registry exports, some PowerShell output, and Notepad's "Unicode" option.
+- **Binary files** (images, PDFs, Word documents ...) are recognised. Instead of gibberish, pydiff says it can't show their contents and whether the two files are identical or different.
+- Lines are split only on real line endings. Python's `splitlines()` also splits on form feeds and some other characters, which could throw line numbers out compared with a text editor.
+
+### Line endings in folder comparisons
+- Files that differ only in their line endings (Windows CRLF vs Unix LF) are shown in **blue** instead of yellow, and don't mark their folder as changed. *View → Folders: Ignore Line-Ending-Only Differences* turns this off. The comparison itself reports *"Line endings: CRLF → LF"*.
+
+### Start maximised and remembered settings (`utilities/settings.py`)
+- **View → Start Maximised** opens pydiff full-screen every time.
+- The view mode, *Only changes*, context lines, *Start maximised* and the line-endings option are remembered in `.pydiff_settings.json` in the user's home folder. If the file can't be written, nothing breaks.
+
+### Not done: diff-match-patch
+A suggestion on the original project was to use Google's *diff-match-patch* library. Its main advantage would be speed on large files, which the new engine already provides, without adding a third-party package. So it wasn't added.
 
 ## Display and usability
 
@@ -131,6 +175,7 @@ Checks are quick, and anything already installed is left alone.
 
 - Paths can now be given directly (`pydiff.py a.py b.py`) as well as with the original `-p a.py b.py`.
 - New options: `-f` / `--functions` and `--check-deps`.
+- New keyboard shortcuts: **Ctrl+O** (compare files), **Ctrl+E** (export), **Ctrl+L** (compare with last commit), **Alt+Up/Down** (previous/next change).
 - pydiff can be started from any folder. It no longer has to be run from inside its own folder.
 
 ---
@@ -138,7 +183,8 @@ Checks are quick, and anything already installed is left alone.
 ## Compatibility notes
 
 - **Python 3.8 or newer is required.** The original README targeted Python 2.7, which has been unsupported since 2020. The Python 2 import fallbacks in the UI files were left in place but are no longer used.
-- The diff parser is **unchanged**. It is now included as `utilities/difflibparser.py` instead of being fetched as a git submodule.
+- The original `difflibparser` submodule is no longer used; pydiff's own engine (`utilities/diffengine.py`) replaces it. The submodule entry is left in place but is harmless.
+- Every new option is off or matches the old behaviour by default, except two corrections: UTF-16 and binary handling, and line-ending-only differences shown in blue in folder comparisons (which can be switched off).
 - Everything that worked before still works the same way. The new features are additions.
 
 ## Files changed
@@ -146,16 +192,19 @@ Checks are quick, and anything already installed is left alone.
 | File | Status | Summary |
 |---|---|---|
 | `pydiff.py` | modified | dependency checks, argument handling, error reporting, DPI fix |
-| `ui/mainwindow.py` | modified | bug fixes 1, 4-8; Compare Functions menu; uses shared `render_diff` |
-| `ui/mainwindow_ui.py` | modified | scrolling fix, colours, selection, bold changed characters |
+| `ui/mainwindow.py` | modified | bug fixes 1, 4-8; new menus (View, Git); binary/encoding handling; folder line-ending option |
+| `ui/mainwindow_ui.py` | modified | scrolling fix, colours, selection, bold changed characters, toolbar row, menu check/radio items |
 | `ui/searchtextdialog.py` | modified | search position fix |
 | `utilities/fileio.py` | modified | missing import, UTF-8 reading |
-| `ui/diffview.py` | **new** | shared side-by-side diff drawing |
+| `ui/diffview.py` | **new** | toolbar, side-by-side and in-line views, only-changes, navigation, export |
 | `ui/functioncompare.py` | **new** | function-by-function comparison |
-| `utilities/difflibparser.py` | **new** | unmodified copy of the original diff parser, so ZIP downloads work |
+| `utilities/diffengine.py` | **new** | fast comparison engine |
+| `utilities/textfiles.py` | **new** | encoding detection (UTF-8/UTF-16/ANSI), binary detection, line endings |
+| `utilities/gittools.py` | **new** | git integration |
+| `utilities/settings.py` | **new** | remembered settings |
 | `Run_PyDiff.bat` | **new** | Windows one-click launcher |
 | `CHANGES.md` | **new** | this file |
-| `screenshot_main.png`, `screenshot_functions.png` | **new** | screenshots for the README |
+| `screenshot_main.png`, `screenshot_inline.png`, `screenshot_functions.png` | **new** | screenshots for the README |
 | `README.md` | rewritten | clearer setup and usage instructions |
 | `LICENSE` | modified | added a copyright line for the modifications; original notice kept |
 

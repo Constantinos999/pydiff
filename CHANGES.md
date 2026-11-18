@@ -92,7 +92,8 @@ Clicking an entry shows the diff of just that function, with real line numbers. 
 ### One-click Windows launcher: `Run_PyDiff.bat`
 - Finds a working Python **3.8 or newer**. Any later version is accepted, including a future 4.x, and the newest installed is preferred. It skips the Microsoft Store placeholder `python.exe`, which isn't a real Python.
 - If no Python is found, offers to install it with `winget`, or opens the python.org download page.
-- Runs the dependency check, then starts pydiff with `pythonw`/`pyw`, so no command window stays open.
+- Runs the dependency check, then starts pydiff with `pythonw.exe` (the no-console version of Python), so no command window stays open. It asks the Python it found where its own `pythonw.exe` is, rather than relying on it being on the PATH.
+- As a backup, pydiff hides its console window itself when that console was opened just for it, e.g. when `pydiff.py` is double-clicked. A command prompt you opened yourself is never hidden.
 - Passes on any files dropped onto it, so you can drag two files or folders onto the launcher to compare them.
 
 ### Automatic dependency checking (`pydiff.py`)
@@ -160,4 +161,4 @@ Checks are quick, and anything already installed is left alone.
 
 ## Licence
 
-The original project is MIT-licensed. Its copyright notice (`Copyright (c) 2016 Yasser Elsayed`) is kept unchanged in `LICENSE` and in every original file, as the licence requires. A second line, `Copyright (c) 2026 Constantinos999`, was added beneath it to cover these modifications. The modified version is released under the same MIT License.
+The original project is MIT-licensed. Its copyright notice (`Copyright (c) 2016 Yasser Elsayed`) is kept unchanged in `LICENSE` and in every original file, as the licence requires. A second line, `Copyright (c) 2026 Constantinos`, was added beneath it to cover these modifications. The modified version is released under the same MIT License.

@@ -57,7 +57,12 @@ PIP_PACKAGES = {}
 # --------------------------------------------------------------------------
 # Messages that work with or without a console (pythonw has no console)
 # --------------------------------------------------------------------------
+CONSOLE_HIDDEN = False
+
+
 def _has_console():
+    if CONSOLE_HIDDEN:
+        return False
     try:
         return sys.stdout is not None and sys.stdout.isatty()
     except Exception:
@@ -164,6 +169,62 @@ def _enable_sharp_text_on_windows():
         pass
 
 
+SHELLS = ('cmd.exe', 'powershell.exe', 'pwsh.exe', 'bash.exe', 'wsl.exe',
+          'windowsterminal.exe', 'openconsole.exe')
+
+
+def _hide_own_console_on_windows():
+    """Hide the console window if it was opened just for pydiff.
+
+    Starting pydiff with python.exe (for example by double-clicking
+    pydiff.py) gives it a console window that stays open behind the app.
+    If no command shell shares that console, the user didn't open it, so it
+    is hidden. When pydiff is started from a command prompt the user opened,
+    that window is left alone. Does nothing if anything is uncertain.
+    """
+    global CONSOLE_HIDDEN
+    if os.name != 'nt':
+        return
+    try:
+        import ctypes
+        import ntpath
+        from ctypes import wintypes
+        k32, u32 = ctypes.windll.kernel32, ctypes.windll.user32
+        k32.GetConsoleWindow.restype = wintypes.HWND
+        k32.OpenProcess.restype = wintypes.HANDLE
+        k32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        k32.QueryFullProcessImageNameW.argtypes = (wintypes.HANDLE, wintypes.DWORD,
+                                                   wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD))
+        k32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        u32.ShowWindow.argtypes = (wintypes.HWND, ctypes.c_int)
+
+        hwnd = k32.GetConsoleWindow()
+        if not hwnd:
+            return                      # already running without a console (pythonw)
+        pids = (wintypes.DWORD * 64)()
+        count = k32.GetConsoleProcessList(pids, 64)
+        if count < 1 or count > 64:
+            return
+        for pid in pids[:count]:
+            if pid == os.getpid():
+                continue
+            handle = k32.OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
+            if not handle:
+                return                  # can't tell what it is: leave the console alone
+            buf = ctypes.create_unicode_buffer(1024)
+            size = wintypes.DWORD(1024)
+            ok = k32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size))
+            k32.CloseHandle(handle)
+            if not ok:
+                return
+            if ntpath.basename(buf.value).lower() in SHELLS:
+                return                  # the user's own command prompt: keep it
+        u32.ShowWindow(hwnd, 0)         # SW_HIDE
+        CONSOLE_HIDDEN = True
+    except Exception:
+        pass
+
+
 def _log_crash(exc_type, exc, tb):
     text = ''.join(traceback.format_exception(exc_type, exc, tb))
     try:
@@ -198,6 +259,10 @@ def main():
         sys.path.insert(0, APP_DIR)
 
     args, paths = parse_args()
+
+    if not args.check_deps:
+        # hide a console opened just for us; messages then appear as pop-ups
+        _hide_own_console_on_windows()
 
     if not check_dependencies():
         return 1

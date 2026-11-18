@@ -19,12 +19,10 @@ rem  asked for its own version, so the Microsoft Store "python" placeholder,
 rem  which is not a real Python, is skipped automatically.
 rem  "py" on its own runs the newest Python installed, so it is tried first.
 set "PY="
-set "PYW="
-set "PYWEXE="
-call :try_python "py" "pyw"
-if not defined PY call :try_python "py -3" "pyw -3"
-if not defined PY call :try_python "python" "pythonw"
-if not defined PY call :try_python "python3" "pythonw"
+call :try_python "py"
+if not defined PY call :try_python "py -3"
+if not defined PY call :try_python "python"
+if not defined PY call :try_python "python3"
 if not defined PY goto :no_python
 
 rem ---- 2. check / install dependencies (fast if all present) ----
@@ -38,21 +36,23 @@ if errorlevel 1 (
 )
 
 rem ---- 3. start the GUI without a console window, then close this one ----
-where %PYWEXE% >nul 2>&1
-if errorlevel 1 (
-    start "PyDiff" /min %PY% "%~dp0pydiff.py" %*
+rem  Ask the Python we found where its own pythonw.exe (the no-console
+rem  version of Python) is, rather than hoping one is on the PATH.
+set "PYWPATH="
+for /f "usebackq delims=" %%p in (`%PY% -c "import sys, os; p = os.path.join(os.path.dirname(sys.executable), 'pythonw.exe'); print(p if os.path.isfile(p) else '')"`) do set "PYWPATH=%%p"
+if defined PYWPATH (
+    start "" "%PYWPATH%" "%~dp0pydiff.py" %*
 ) else (
-    start "" %PYW% "%~dp0pydiff.py" %*
+    rem  no pythonw.exe found: pydiff hides its own console window instead
+    start "PyDiff" /min %PY% "%~dp0pydiff.py" %*
 )
 exit /b 0
 
 :try_python
-rem  %1 = command to run Python, %2 = matching no-console command
+rem  %1 = command to run Python; sets PY if it is version 3.8 or newer
 %~1 -c "import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)" >nul 2>&1
 if errorlevel 1 exit /b 0
 set "PY=%~1"
-set "PYW=%~2"
-for /f "tokens=1" %%a in ("%~2") do set "PYWEXE=%%a"
 exit /b 0
 
 :no_python

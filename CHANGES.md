@@ -99,12 +99,17 @@ Clicking an entry shows the diff of just that function, with real line numbers. 
 On every start (and with `--check-deps`), pydiff checks:
 - the Python version (3.8+ is required, for `ast` end-line information);
 - that Tkinter is available. It can't be installed with pip, so clear instructions are shown instead;
-- that the `difflibparser` submodule is present. If not, it runs `git submodule update --init` itself;
+- that pydiff's own files are all present (catches an incomplete download);
 - any third-party packages listed in `PIP_PACKAGES`, installing missing ones with pip (using `ensurepip` first if pip itself is missing). The list is empty at present because pydiff needs none; it's there so any future dependency is handled automatically.
 
 Checks are quick, and anything already installed is left alone.
 
 ---
+
+### Works when downloaded as a ZIP
+- **Problem:** The original kept the diff parser (`difflibparser`) as a git *submodule*. GitHub's **Download ZIP** doesn't include submodules, so ZIP downloads had an empty `difflibparser` folder and pydiff couldn't start.
+- **Fix:** An unmodified copy of `difflibparser.py` (same author, same MIT licence, with its original copyright notice) is now included directly as `utilities/difflibparser.py`, and pydiff uses that copy. Both ZIP downloads and plain `git clone` now work with no extra steps. The old submodule folder is no longer used.
+- **Files:** `utilities/difflibparser.py` (new), `ui/diffview.py`, `pydiff.py`
 
 ## Display and usability
 
@@ -132,7 +137,7 @@ Checks are quick, and anything already installed is left alone.
 ## Compatibility notes
 
 - **Python 3.8 or newer is required.** The original README targeted Python 2.7, which has been unsupported since 2020. The Python 2 import fallbacks in the UI files were left in place but are no longer used.
-- `difflibparser` (the submodule) is **unchanged** and still points to the original repository.
+- The diff parser is **unchanged**. It is now included as `utilities/difflibparser.py` instead of being fetched as a git submodule.
 - Everything that worked before still works the same way. The new features are additions.
 
 ## Files changed
@@ -146,6 +151,7 @@ Checks are quick, and anything already installed is left alone.
 | `utilities/fileio.py` | modified | missing import, UTF-8 reading |
 | `ui/diffview.py` | **new** | shared side-by-side diff drawing |
 | `ui/functioncompare.py` | **new** | function-by-function comparison |
+| `utilities/difflibparser.py` | **new** | unmodified copy of the original diff parser, so ZIP downloads work |
 | `Run_PyDiff.bat` | **new** | Windows one-click launcher |
 | `CHANGES.md` | **new** | this file |
 | `screenshot_main.png`, `screenshot_functions.png` | **new** | screenshots for the README |
@@ -154,4 +160,4 @@ Checks are quick, and anything already installed is left alone.
 
 ## Licence
 
-The original project is MIT-licensed. Its copyright notice (`Copyright (c) 2016 Yasser Elsayed`) is kept unchanged in `LICENSE` and in every original file, as the licence requires. A second line, `Copyright (c) 2026 Constantinos`, was added beneath it to cover these modifications. The modified version is released under the same MIT License.
+The original project is MIT-licensed. Its copyright notice (`Copyright (c) 2016 Yasser Elsayed`) is kept unchanged in `LICENSE` and in every original file, as the licence requires. A second line, `Copyright (c) 2026 Constantinos999`, was added beneath it to cover these modifications. The modified version is released under the same MIT License.

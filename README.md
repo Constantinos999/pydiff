@@ -18,13 +18,12 @@ This is a modified version of [pydiff](https://github.com/yelsayd/pydiff) by Yas
 
 ## Getting it
 
-pydiff uses a git *submodule* (`difflibparser`), so clone it **recursively**:
+Either:
 
-```
-git clone --recursive https://github.com/YOUR-USERNAME/pydiff.git
-```
+- **Download ZIP:** click the green **Code** button on this page, then **Download ZIP**, and unzip it anywhere, or
+- **Clone with git:** `git clone https://github.com/YOUR-USERNAME/pydiff.git`
 
-If you downloaded a ZIP instead, or forgot `--recursive`, that's fine. On first run pydiff notices the missing `difflibparser` folder and fetches it for you, as long as git is installed.
+Everything pydiff needs is included either way.
 
 ## Running it
 
@@ -119,6 +118,6 @@ This mode needs files that are valid **Python 3** code. For anything else, use t
 ## Credits and licence
 
 - Original pydiff and difflibparser: **Yasser Elsayed** (2016).
-- Bug fixes, function comparison and Windows launcher: **Constantinos** (2026). See [CHANGES.md](CHANGES.md).
+- Bug fixes, function comparison and Windows launcher: **Constantinos999** (2026). See [CHANGES.md](CHANGES.md).
 
 Released under the **MIT License**, the same licence as the original. See [LICENSE](LICENSE). You're free to use, modify and share it, as long as the copyright notices and licence text are kept.

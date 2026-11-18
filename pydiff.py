@@ -126,18 +126,13 @@ def check_dependencies():
                '"tcl/tk and IDLE", and finish. Then start pydiff again.')
         return False
 
-    # 2. The difflibparser module that ships with the repo as a git submodule.
-    parser_file = os.path.join(APP_DIR, 'difflibparser', 'difflibparser.py')
-    if not os.path.isfile(parser_file):
-        print('difflibparser submodule missing - trying "git submodule update --init" ...')
-        try:
-            subprocess.call(['git', 'submodule', 'update', '--init', '--recursive'], cwd=APP_DIR)
-        except OSError:
-            pass
-        if not os.path.isfile(parser_file):
-            report('difflibparser is missing',
-                   'The "difflibparser" folder is empty. Re-clone the repo with:\n'
-                   'git clone --recursive https://github.com/yebrahim/pydiff.git')
+    # 2. pydiff's own files (catches an incomplete download or copy).
+    for part in (('ui', 'mainwindow.py'), ('ui', 'diffview.py'), ('ui', 'functioncompare.py'),
+                 ('utilities', 'difflibparser.py')):
+        if not os.path.isfile(os.path.join(APP_DIR, *part)):
+            report('pydiff is incomplete',
+                   'This file is missing:\n%s\n\nPlease download pydiff again.'
+                   % os.path.join(APP_DIR, *part))
             return False
 
     # 3. Any third-party pip packages (none at present).
@@ -197,7 +192,7 @@ def parse_args():
 
 
 def main():
-    # Make the bundled packages (ui, difflibparser, utilities) importable no
+    # Make the bundled packages (ui, utilities) importable no
     # matter which folder pydiff was launched from.
     if APP_DIR not in sys.path:
         sys.path.insert(0, APP_DIR)
